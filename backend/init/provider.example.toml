@@ -1,0 +1,6 @@
+[[provider]]
+provider_id = 0
+provider_name = "test"
+type = "openai"
+base_url = "https://example.com/v1/chat/completions" # need all url
+api_key = "sk-123456"
