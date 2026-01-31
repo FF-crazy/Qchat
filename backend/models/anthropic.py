@@ -34,3 +34,21 @@ class AnthropicMessageRequest(BaseModel):
 class AnthropicUsage(BaseModel):
     input_tokens: int
     output_tokens: int
+
+class AnthropicResponseContent(BaseModel):
+    content_type: str
+    content_id: str | None
+    name: str | None
+    content_input: dict[str, Any] | None
+    text: str | None
+
+class AnthropicResponseMessage(BaseModel):
+    message_id: str
+    message_type: str = "message"
+    role: str
+    model: str
+    content: list[AnthropicResponseContent]
+    stop_reason: str | None
+    stop_sequence: str | None
+    usage: AnthropicUsage
+    

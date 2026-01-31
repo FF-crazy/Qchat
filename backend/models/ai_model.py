@@ -28,3 +28,7 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = None
     tools: list[dict[str, Any]] | None
     stop: str | list[str] | None
+
+class ModelInfo(BaseModel):
+    model_id: str
+    
