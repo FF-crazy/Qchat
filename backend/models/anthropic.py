@@ -51,4 +51,4 @@ class AnthropicResponseMessage(BaseModel):
     stop_reason: str | None
     stop_sequence: str | None
     usage: AnthropicUsage
-    
+

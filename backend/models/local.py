@@ -31,4 +31,12 @@ class ChatCompletionRequest(BaseModel):
 
 class ModelInfo(BaseModel):
     model_id: str
+    object: str = "model"
+    created: int
+    owned_by: int
+
+class ModelList(BaseModel):
+    data: list[ModelInfo]
+    object: str = "list"
+    success: bool = True
     
