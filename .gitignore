@@ -1,4 +1,46 @@
-.venv
+.venv/
 uv.lock
-backend/tests/
-__pycache__
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Test artifacts
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.cover
+*.py,cover
+
+# Test files/folders
+tests/
+test/
+*_test.py
+test_*.py
+
+# Virtual environments
+venv/
+ENV/
+env/
+virtualenv/
+
+# Packaging/build
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Logs & local config
+*.log
+.env
+.env.*
+
+# OS/Editor
+.DS_Store
+.idea/
+.vscode/

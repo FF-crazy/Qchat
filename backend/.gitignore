@@ -12,6 +12,7 @@ coverage.xml
 htmlcov/
 *.cover
 *.py,cover
+**/__pycache__/
 
 # Test files/folders
 tests/
