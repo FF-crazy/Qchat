@@ -1,13 +1,18 @@
+from ast import mod
 import httpx
+from pydantic import BaseModel
 
 from backend.models.local import ModelList, Provider
 from backend.models.openai import (
+  REASONING_EFFORT,
   OpenAIChunkResponse,
   OpenAIError,
   OpenAIMessageRequest,
   OpenAIMessageResponse,
 )
 import certifi
+
+from backend.service.context import ContextManager
 
 OPENAI_V1_CHAT = "/v1/chat/completions"
 OPENAI_V1_MODEL = "/v1/models"
@@ -91,3 +96,20 @@ class MessagePoster:
     except httpx.HTTPStatusError as e:
       self._raise_openai_error(e)
       raise RuntimeError() # never run this line
+
+
+class RequestBuilder(BaseModel):
+    context_manager: ContextManager
+
+    def build_openai_request(
+        self, model: str, stream: bool, reasoning_effort: REASONING_EFFORT
+    ) -> OpenAIMessageRequest:
+        req = OpenAIMessageRequest(
+            model=model,
+            reasoning_effort=reasoning_effort,
+            messages=self.context_manager.context,
+            stream=stream,
+        )
+        if req.stream:
+            req.stream_options = {"include_usage": True}
+        return req

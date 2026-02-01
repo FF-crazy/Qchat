@@ -1,9 +1,11 @@
 from pydantic import BaseModel
 from typing import Any, Literal
 
+type REASONING_EFFORT = Literal["low", "medium", "high", "xhigh"]
+
 class OpenAIMessage(BaseModel):
-  role: str
-  content: str
+  role: str | None = None
+  content: str | None = None
   refusal: str | None = None
   annotations: list[dict[str, Any]] | None = None
   model_config = {"extra": "allow"}
@@ -13,7 +15,7 @@ class OpenAIMessageRequest(BaseModel):
   max_tokens: int = 64000
   temperature: float | None = None
   top_p: float| None = None
-  reasoning_effort: Literal["low", "medium", "high", "xhigh"] | None = None
+  reasoning_effort: REASONING_EFFORT | None = None
   messages: list[OpenAIMessage]
   stream: bool = False
   stream_options: dict[str, bool] | None = None
@@ -23,18 +25,17 @@ class OpenAIResponseBlock(BaseModel):
   message: OpenAIMessage
   finish_reason: str = "stop"
 
-class OpenAIDelta(BaseModel):
-  """using stream"""
-  role: str | None = None
-  content: str | None = None
-  refusal: str | None = None
-  annotations: list[dict[str, Any]] | None = None
-  model_config = {"extra": "allow"}
+class OpenAIUsage(BaseModel):
+  prompt_tokens: int
+  completion_tokens: int
+  total_tokens: int
+  prompt_tokens_details: dict[str, int] | None = None
+  completion_tokens_details: dict[str, int] | None = None
 
 class OpenAIChunkChoice(BaseModel):
   """using stream"""
   index: int
-  delta: OpenAIDelta
+  delta: OpenAIMessage
   finish_reason: str | None = None
 
 class OpenAIChunkResponse(BaseModel):
@@ -44,14 +45,10 @@ class OpenAIChunkResponse(BaseModel):
   created: int
   model: str
   choices: list[OpenAIChunkChoice]
+  usage: OpenAIUsage
   model_config = {"extra": "allow"}
 
-class OpenAIUsage(BaseModel):
-  prompt_tokens: int
-  completion_tokens: int
-  total_tokens: int
-  prompt_tokens_details: dict[str, int] | None = None
-  completion_tokens_details: dict[str, int] | None = None
+
 
 class OpenAIMessageResponse(BaseModel):
   id: str
