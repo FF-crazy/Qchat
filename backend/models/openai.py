@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Literal
 
 class OpenAIMessage(BaseModel):
   role: str
@@ -11,7 +11,12 @@ class OpenAIMessage(BaseModel):
 class OpenAIMessageRequest(BaseModel):
   model: str
   max_tokens: int = 64000
+  temperature: float | None = None
+  top_p: float| None = None
+  reasoning_effort: Literal["low", "medium", "high", "xhigh"] | None = None
   messages: list[OpenAIMessage]
+  stream: bool = False
+  stream_options: dict[str, bool] | None = None
 
 class OpenAIResponseBlock(BaseModel):
   index: int
@@ -33,3 +38,12 @@ class OpenAIMessageResponse(BaseModel):
   choices: list[OpenAIResponseBlock]
   usage: OpenAIUsage
   model_config = {"extra": "allow"}
+
+class OpenAIErrorDetail(BaseModel):
+  message: str
+  type: str
+  param: str | None = None
+  code: str | None = None
+
+class OpenAIError(BaseModel):
+  error: OpenAIErrorDetail

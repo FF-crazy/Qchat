@@ -30,10 +30,10 @@ class ChatCompletionRequest(BaseModel):
     stop: str | list[str] | None
 
 class ModelInfo(BaseModel):
-    model_id: str
+    id: str
     object: str = "model"
     created: int
-    owned_by: int
+    owned_by: str
 
 class ModelList(BaseModel):
     data: list[ModelInfo]
