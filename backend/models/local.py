@@ -28,15 +28,3 @@ class ChatCompletionRequest(BaseModel):
     top_p: float | None = None
     tools: list[dict[str, Any]] | None
     stop: str | list[str] | None
-
-class ModelInfo(BaseModel):
-    id: str
-    object: str = "model"
-    created: int
-    owned_by: str
-
-class ModelList(BaseModel):
-    data: list[ModelInfo]
-    object: str = "list"
-    success: bool = True
-    

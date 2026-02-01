@@ -4,6 +4,7 @@ from typing import Any, Literal
 type REASONING_EFFORT = Literal["low", "medium", "high", "xhigh"]
 
 class OpenAIMessage(BaseModel):
+  """using stream and normal"""
   role: str | None = None
   content: str | None = None
   refusal: str | None = None
@@ -26,9 +27,9 @@ class OpenAIResponseBlock(BaseModel):
   finish_reason: str = "stop"
 
 class OpenAIUsage(BaseModel):
-  prompt_tokens: int
-  completion_tokens: int
-  total_tokens: int
+  prompt_tokens: int | None
+  completion_tokens: int | None
+  total_tokens: int | None
   prompt_tokens_details: dict[str, int] | None = None
   completion_tokens_details: dict[str, int] | None = None
 
@@ -45,10 +46,19 @@ class OpenAIChunkResponse(BaseModel):
   created: int
   model: str
   choices: list[OpenAIChunkChoice]
-  usage: OpenAIUsage
+  usage: OpenAIUsage | None = None
   model_config = {"extra": "allow"}
 
+class OpenAIModelInfo(BaseModel):
+  id: str
+  object: str = "model"
+  created: int
+  owned_by: str
 
+class OpenAIModelList(BaseModel):
+  data: list[OpenAIModelInfo]
+  object: str = "list"
+  success: bool = True
 
 class OpenAIMessageResponse(BaseModel):
   id: str
