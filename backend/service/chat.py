@@ -2,6 +2,7 @@ import httpx
 
 from backend.models.local import ModelList, Provider
 from backend.models.openai import (
+  OpenAIChunkResponse,
   OpenAIError,
   OpenAIMessageRequest,
   OpenAIMessageResponse,
@@ -42,6 +43,43 @@ class MessagePoster:
     except httpx.HTTPStatusError as e:
       self._raise_openai_error(e)
       raise RuntimeError() # never run this line
+
+  async def openai_post_stream(self, payload: OpenAIMessageRequest):
+    stream_payload = payload.model_dump()
+    stream_payload["stream"] = True
+    try:
+      async with self.HTTP_CLIENT.stream(
+        "POST",
+        url=f"{self.provider.base_url}{OPENAI_V1_CHAT}",
+        headers=self.headers,
+        json=stream_payload,
+      ) as response:
+        response.raise_for_status()
+        async for line in response.aiter_lines():
+          if not line or not line.startswith("data: "):
+            continue
+          data = line[len("data: "):]
+          if data == "[DONE]":
+            break
+          yield OpenAIChunkResponse.model_validate_json(data)
+    except httpx.HTTPStatusError as e:
+      self._raise_openai_error(e)
+      raise RuntimeError() # never run this line
+
+  async def openai_post_stream_text(self, payload: OpenAIMessageRequest):
+    async for chunk in self.openai_post_stream(payload):
+      for choice in chunk.choices:
+        if choice.delta.content:
+          yield choice.delta.content
+
+  async def openai_post_stream_text_collect(self, payload: OpenAIMessageRequest) -> str:
+    parts: list[str] = []
+    async for text in self.openai_post_stream_text(payload):
+      parts.append(text)
+    return "".join(parts)
+
+
+
   async def openai_get_model_list(self) -> ModelList:
     try:
       response = await self.HTTP_CLIENT.get(

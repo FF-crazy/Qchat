@@ -23,6 +23,29 @@ class OpenAIResponseBlock(BaseModel):
   message: OpenAIMessage
   finish_reason: str = "stop"
 
+class OpenAIDelta(BaseModel):
+  """using stream"""
+  role: str | None = None
+  content: str | None = None
+  refusal: str | None = None
+  annotations: list[dict[str, Any]] | None = None
+  model_config = {"extra": "allow"}
+
+class OpenAIChunkChoice(BaseModel):
+  """using stream"""
+  index: int
+  delta: OpenAIDelta
+  finish_reason: str | None = None
+
+class OpenAIChunkResponse(BaseModel):
+  """using stream"""
+  id: str
+  object: str
+  created: int
+  model: str
+  choices: list[OpenAIChunkChoice]
+  model_config = {"extra": "allow"}
+
 class OpenAIUsage(BaseModel):
   prompt_tokens: int
   completion_tokens: int
