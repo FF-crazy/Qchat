@@ -1,10 +1,16 @@
+from typing import Any, Literal
 from pydantic import BaseModel
 
+class GeminiThinkingConfig(BaseModel):
+    includeThoughts: bool = True
+    thinkingLevel: Literal["low", "high"]
 
 class GeminiConfig(BaseModel):
-  maxOutputTokens: int = 65536
-  temperature: float = 1
-  topP: float = 1
+    maxOutputTokens: int = 65536
+    temperature: float = 1
+    topP: float = 1
+    thinkingConfig: GeminiThinkingConfig | None = None
+    
 
 class GeminiMessagePart(BaseModel):
   text: str | None = None
@@ -15,8 +21,9 @@ class GeminiMessage(BaseModel):
   parts: list[GeminiMessagePart]
 
 class GeminiRequest(BaseModel):
-  generationConfig: GeminiConfig
-  contents: list[GeminiMessage]
+    generationConfig: GeminiConfig
+    contents: list[GeminiMessage]
+    systemInstruction: list[GeminiMessagePart] | None = None
 
 class GeminiRequestWithModel(BaseModel):
   """Google's style is to concatenate the model name into the URL. In order to unify the interface, I had to add a new class."""
