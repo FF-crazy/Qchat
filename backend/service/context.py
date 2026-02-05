@@ -7,7 +7,7 @@ from backend.models.openai import OpenAIMessage, OpenAIMessageRequest, OpenAIUsa
 
 class ContextManager(BaseModel):
   context: list[OpenAIMessage]
-  usage: OpenAIUsage | None
+  usage: OpenAIUsage | None = None
   MAX_TOKEN: int
 
   def add_message(self, message: OpenAIMessage) -> None:

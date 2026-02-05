@@ -27,9 +27,9 @@ class OpenAIResponseBlock(BaseModel):
   finish_reason: str = "stop"
 
 class OpenAIUsage(BaseModel):
-  prompt_tokens: int | None
-  completion_tokens: int | None
-  total_tokens: int | None
+  prompt_tokens: int
+  completion_tokens: int
+  total_tokens: int
   prompt_tokens_details: dict[str, int] | None = None
   completion_tokens_details: dict[str, int] | None = None
 
