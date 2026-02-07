@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from typing import Literal
 import httpx
 from pydantic import BaseModel
@@ -94,20 +95,19 @@ class MessagePoster:
             raise RuntimeError()  # never run this line
 
     async def openai_post_stream(self, payload: OpenAIMessageRequest):
-        stream_payload = payload.model_dump()
-        stream_payload["stream"] = True
         try:
             async with self.HTTP_CLIENT.stream(
-                "POST",
+                method="POST",
                 url=f"{self.request_builder.provider.base_url}{OPENAI_V1_CHAT}",
                 headers=self.request_builder.build_openai_header(),
-                json=stream_payload,
+                json=payload.model_dump(),
+                timeout=600,
             ) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data: "):
                         continue
-                    data = line[len("data: ") :]
+                    data: str = line[6:]
                     if data == "[DONE]":
                         break
                     yield OpenAIChunkResponse.model_validate_json(data)
@@ -120,14 +120,6 @@ class MessagePoster:
             for choice in chunk.choices:
                 if choice.delta.content:
                     yield choice.delta.content
-
-    async def openai_post_stream_text_collect(
-        self, payload: OpenAIMessageRequest
-    ) -> str:
-        parts: list[str] = []
-        async for text in self.openai_post_stream_text(payload):
-            parts.append(text)
-        return "".join(parts)
 
     async def openai_get_model_list(self) -> OpenAIModelList:
         try:
@@ -157,6 +149,36 @@ class MessagePoster:
             return GeminiResponse.model_validate(data)
         except httpx.HTTPStatusError as e:
             raise e
+
+    async def gemini_post_stream(self, req: GeminiRequestWithModel):
+        url = f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}/{req.model}:streamGenerateContent?alt=sse"
+        try:
+            async with self.HTTP_CLIENT.stream(
+                method="POST",
+                url=url,
+                headers=self.request_builder.build_gemini_header(),
+                json=req.request_body.model_dump(),
+                timeout=600,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    yield GeminiResponse.model_validate_json(data)
+        except httpx.HTTPStatusError as e:
+            raise e
+
+    async def gemini_post_stream_text(self, req: GeminiRequestWithModel):
+        async for chunk in self.gemini_post_stream(req):
+            for candidate in chunk.candidates:
+                for part in candidate.content.parts:
+                    if part.text:
+                        yield part.text
+    
+
+
+
 
     async def gemini_get_model_list(self) -> GeminiModelList:
         try:

@@ -1,7 +1,4 @@
-
-
 from pydantic import BaseModel
-
 from backend.models.openai import OpenAIMessage, OpenAIMessageRequest, OpenAIUsage
 
 

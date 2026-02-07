@@ -1,3 +1,4 @@
+from tkinter import NO
 from typing import Any, Literal
 from pydantic import BaseModel
 
@@ -35,17 +36,19 @@ class GeminiUsage(BaseModel):
   candidatesTokenCount: int
   totalTokenCount: int
   thoughtsTokenCount: int | None = None
-  promptTokensDetails: None | dict = None
+  promptTokensDetails: None | dict[str, Any] = None
 
 class GeminiResponseBlock(BaseModel):
   content: GeminiMessage
-  finishReason: str = "STOP"
+  finishReason: str | None = "STOP"
   index: int
   safetyRatings: list[str]
 
 class GeminiResponse(BaseModel):
-  candidates: list[GeminiResponseBlock]
-  usageMetadata: GeminiUsage
+    candidates: list[GeminiResponseBlock]
+    usageMetadata: GeminiUsage
+    modelVersion: str | None = None
+    responseId: str | None = None
 
 
 class GeminiModelInfo(BaseModel):
