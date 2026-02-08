@@ -3,15 +3,21 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
-from backend.models.gemini import GeminiModelList, GeminiRequest, GeminiRequestWithModel, GeminiResponse
+from backend.models.anthropic import AnthropicRequest, AnthropicResponse
+from backend.models.gemini import (
+    GeminiModelList,
+    GeminiRequest,
+    GeminiRequestWithModel,
+    GeminiResponse,
+)
 from backend.models.local import Provider
 from backend.models.openai import (
-  REASONING_EFFORT,
-  OpenAIChunkResponse,
-  OpenAIError,
-  OpenAIModelList,
-  OpenAIMessageRequest,
-  OpenAIMessageResponse,
+    REASONING_EFFORT,
+    OpenAIChunkResponse,
+    OpenAIError,
+    OpenAIModelList,
+    OpenAIMessageRequest,
+    OpenAIMessageResponse,
 )
 import certifi
 
@@ -20,6 +26,8 @@ from backend.service.context import ContextManager
 OPENAI_V1_CHAT = "/v1/chat/completions"
 OPENAI_V1_MODEL = "/v1/models"
 GEMINI_V1BETA = "/v1beta/models"
+ANTHROPIC_V1 = "/v1/messages"
+
 
 class RequestBuilder(BaseModel):
     context_manager: ContextManager
@@ -33,10 +41,16 @@ class RequestBuilder(BaseModel):
         ret: dict[str, str] = self.header.copy()
         ret["Authorization"] = f"Bearer {self.provider.api_key}"
         return ret
-    
+
     def build_gemini_header(self) -> dict[str, str]:
         ret: dict[str, str] = self.header.copy()
         ret["x-goog-api-key"] = f"{self.provider.api_key}"
+        return ret
+
+    def build_anthropic_header(self) -> dict[str, str]:
+        ret: dict[str, str] = self.header.copy()
+        ret["x-api-key"] = f"{self.provider.api_key}"
+        ret["anthropic-version"] = "2023-06-01"
         return ret
 
     def build_openai_request_body(
@@ -58,8 +72,8 @@ class RequestBuilder(BaseModel):
         stream: bool,
         reasoning_effort: Literal["low", "high"] | None,
     ) -> GeminiRequestWithModel:
-        
         return GeminiRequestWithModel(model=model, request_body=GeminiRequest())
+
 
 class MessagePoster:
     def __init__(
@@ -128,21 +142,18 @@ class MessagePoster:
                 headers=self.request_builder.build_openai_header(),
             )
             response.raise_for_status()
-            print(response.json())
             return OpenAIModelList.model_validate(response.json())
         except httpx.HTTPStatusError as e:
             self._raise_openai_error(e)
             raise RuntimeError()  # never run this line
 
-    async def gemini_post(self, req: GeminiRequestWithModel) -> GeminiResponse:
-        url: str = (
-            f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}/{req.model}:generateContent"
-        )
+    async def gemini_post(self, payload: GeminiRequestWithModel) -> GeminiResponse:
+        url: str = f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}/{payload.model}:generateContent"
         try:
             response: httpx.Response = await self.HTTP_CLIENT.post(
                 url=url,
                 headers=self.request_builder.build_gemini_header(),
-                json=req.request_body.model_dump()
+                json=payload.request_body.model_dump(),
             )
             response.raise_for_status()
             data = response.json()
@@ -150,14 +161,14 @@ class MessagePoster:
         except httpx.HTTPStatusError as e:
             raise e
 
-    async def gemini_post_stream(self, req: GeminiRequestWithModel):
-        url = f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}/{req.model}:streamGenerateContent?alt=sse"
+    async def gemini_post_stream(self, payload: GeminiRequestWithModel):
+        url = f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}/{payload.model}:streamGenerateContent?alt=sse"
         try:
             async with self.HTTP_CLIENT.stream(
                 method="POST",
                 url=url,
                 headers=self.request_builder.build_gemini_header(),
-                json=req.request_body.model_dump(),
+                json=payload.request_body.model_dump(),
                 timeout=600,
             ) as response:
                 response.raise_for_status()
@@ -169,24 +180,33 @@ class MessagePoster:
         except httpx.HTTPStatusError as e:
             raise e
 
-    async def gemini_post_stream_text(self, req: GeminiRequestWithModel):
-        async for chunk in self.gemini_post_stream(req):
+    async def gemini_post_stream_text(self, payload: GeminiRequestWithModel):
+        async for chunk in self.gemini_post_stream(payload):
             for candidate in chunk.candidates:
                 for part in candidate.content.parts:
                     if part.text:
                         yield part.text
-    
-
-
-
 
     async def gemini_get_model_list(self) -> GeminiModelList:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.get(
                 url=f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}",
                 headers=self.request_builder.build_gemini_header(),
-                )
+            )
             response.raise_for_status()
             return GeminiModelList.model_validate(response.json())
+        except httpx.HTTPStatusError as e:
+            raise e
+        
+    async def anthropic_post(self, payload: AnthropicRequest) -> AnthropicResponse:
+        try:
+            response: httpx.Response = await self.HTTP_CLIENT.post(
+                url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1}",
+                headers=self.request_builder.build_anthropic_header(),
+                json=payload.model_dump(),
+            )
+            response.raise_for_status()
+            data = response.json()
+            return AnthropicResponse.model_validate(data)
         except httpx.HTTPStatusError as e:
             raise e
