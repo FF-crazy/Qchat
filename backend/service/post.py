@@ -1,9 +1,13 @@
-from http import HTTPStatus
 from typing import Literal
 import httpx
 from pydantic import BaseModel
 
-from backend.models.anthropic import AnthropicRequest, AnthropicResponse
+from backend.models.anthropic import (
+    AnthropicModelList,
+    AnthropicRequest,
+    AnthropicResponse,
+    AnthropicStreamEvent,
+)
 from backend.models.gemini import (
     GeminiModelList,
     GeminiRequest,
@@ -26,7 +30,8 @@ from backend.service.context import ContextManager
 OPENAI_V1_CHAT = "/v1/chat/completions"
 OPENAI_V1_MODEL = "/v1/models"
 GEMINI_V1BETA = "/v1beta/models"
-ANTHROPIC_V1 = "/v1/messages"
+ANTHROPIC_V1_MESSAGE = "/v1/messages"
+ANTHROPIC_V1_MODEL = "/v1/models"
 
 
 class RequestBuilder(BaseModel):
@@ -51,6 +56,7 @@ class RequestBuilder(BaseModel):
         ret: dict[str, str] = self.header.copy()
         ret["x-api-key"] = f"{self.provider.api_key}"
         ret["anthropic-version"] = "2023-06-01"
+        ret["anthropic-beta"] = "interleaved-thinking-2025-05-14"
         return ret
 
     def build_openai_request_body(
@@ -201,12 +207,51 @@ class MessagePoster:
     async def anthropic_post(self, payload: AnthropicRequest) -> AnthropicResponse:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.post(
-                url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1}",
+                url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1_MESSAGE}",
                 headers=self.request_builder.build_anthropic_header(),
                 json=payload.model_dump(),
             )
             response.raise_for_status()
             data = response.json()
             return AnthropicResponse.model_validate(data)
+        except httpx.HTTPStatusError as e:
+            raise e
+
+    async def anthropic_post_stream(self, payload: AnthropicRequest):
+        try:
+            async with self.HTTP_CLIENT.stream(
+                method="POST",
+                url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1_MESSAGE}",
+                headers=self.request_builder.build_anthropic_header(),
+                json=payload.model_dump(),
+                timeout=600,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    if not data:
+                        continue
+                    yield AnthropicStreamEvent.model_validate_json(data)
+        except httpx.HTTPStatusError as e:
+            raise e
+
+    async def anthropic_post_stream_text(self, payload: AnthropicRequest):
+        async for event in self.anthropic_post_stream(payload):
+            if event.type == "content_block_delta":
+                if event.delta and event.delta.get("type") == "text_delta":
+                    text = event.delta.get("text")
+                    if text:
+                        yield text
+
+    async def anthropic_get_model_list(self) -> AnthropicModelList:
+        try:
+            response = await self.HTTP_CLIENT.get(
+                url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1_MODEL}",
+                headers=self.request_builder.build_anthropic_header(),
+            )
+            response.raise_for_status()
+            return AnthropicModelList.model_validate(response.json())
         except httpx.HTTPStatusError as e:
             raise e
