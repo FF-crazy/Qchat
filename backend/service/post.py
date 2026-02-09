@@ -1,4 +1,5 @@
-from typing import Literal
+from typing import Any, AsyncIterator, Callable, Literal, overload
+import inspect
 import httpx
 from pydantic import BaseModel
 
@@ -9,10 +10,12 @@ from backend.models.anthropic import (
     AnthropicStreamEvent,
 )
 from backend.models.gemini import (
+    GeminiConfig,
     GeminiModelList,
     GeminiRequest,
     GeminiRequestWithModel,
     GeminiResponse,
+    GeminiThinkingConfig,
 )
 from backend.models.local import Provider
 from backend.models.openai import (
@@ -25,7 +28,7 @@ from backend.models.openai import (
 )
 import certifi
 
-from backend.service.context import ContextManager
+from backend.service.context import ContextManager, encode_gemini, encode_openai
 
 OPENAI_V1_CHAT = "/v1/chat/completions"
 OPENAI_V1_MODEL = "/v1/models"
@@ -62,10 +65,11 @@ class RequestBuilder(BaseModel):
     def build_openai_request_body(
         self, model: str, stream: bool, reasoning_effort: REASONING_EFFORT | None
     ) -> OpenAIMessageRequest:
+        messages = self.context_manager.export(encode_openai)
         req = OpenAIMessageRequest(
             model=model,
             reasoning_effort=reasoning_effort,
-            messages=self.context_manager.context,
+            messages=messages,
             stream=stream,
         )
         if req.stream:
@@ -78,10 +82,37 @@ class RequestBuilder(BaseModel):
         stream: bool,
         reasoning_effort: Literal["low", "high"] | None,
     ) -> GeminiRequestWithModel:
-        return GeminiRequestWithModel(model=model, request_body=GeminiRequest())
+        system_instruction, contents = self.context_manager.export(encode_gemini)
+        config = GeminiConfig()
+        if reasoning_effort is not None:
+            config.thinkingConfig = GeminiThinkingConfig(
+                includeThoughts=True, thinkingLevel=reasoning_effort
+            )
+        return GeminiRequestWithModel(
+            model=model,
+            request_body=GeminiRequest(
+                generationConfig=config,
+                contents=contents,
+                systemInstruction=system_instruction,
+            ),
+        )
+
+
+PostMethodName = Literal[
+    "openai_post",
+    "openai_post_stream",
+    "openai_post_stream_text",
+    "gemini_post",
+    "gemini_post_stream",
+    "gemini_post_stream_text",
+    "anthropic_post",
+    "anthropic_post_stream",
+    "anthropic_post_stream_text",
+]
 
 
 class MessagePoster:
+
     def __init__(
         self, provider: Provider, context_manager: ContextManager | None = None
     ) -> None:
@@ -255,3 +286,54 @@ class MessagePoster:
             return AnthropicModelList.model_validate(response.json())
         except httpx.HTTPStatusError as e:
             raise e
+    
+    @overload
+    async def post_message(
+        self, method: Literal["openai_post"], payload: OpenAIMessageRequest
+    ) -> OpenAIMessageResponse: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["openai_post_stream"], payload: OpenAIMessageRequest
+    ) -> AsyncIterator[OpenAIChunkResponse]: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["openai_post_stream_text"], payload: OpenAIMessageRequest
+    ) -> AsyncIterator[str]: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["gemini_post"], payload: GeminiRequestWithModel
+    ) -> GeminiResponse: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["gemini_post_stream"], payload: GeminiRequestWithModel
+    ) -> AsyncIterator[GeminiResponse]: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["gemini_post_stream_text"], payload: GeminiRequestWithModel
+    ) -> AsyncIterator[str]: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["anthropic_post"], payload: AnthropicRequest
+    ) -> AnthropicResponse: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["anthropic_post_stream"], payload: AnthropicRequest
+    ) -> AsyncIterator[AnthropicStreamEvent]: ...
+
+    @overload
+    async def post_message(
+        self, method: Literal["anthropic_post_stream_text"], payload: AnthropicRequest
+    ) -> AsyncIterator[str]: ...
+
+    async def post_message(self, method: PostMethodName, payload: Any):
+        fn: Callable = getattr(self, method)
+        if inspect.isasyncgenfunction(fn):
+            return fn(payload)
+        return await fn(payload)
