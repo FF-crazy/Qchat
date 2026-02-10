@@ -198,25 +198,30 @@ class ContextManager(BaseModel):
 
     @staticmethod
     def _extract_total_tokens(usage: Any) -> int | None:
-        if usage is None:
-            return None
-        if hasattr(usage, "total_tokens"):
-            return getattr(usage, "total_tokens")
-        if hasattr(usage, "totalTokenCount"):
-            return getattr(usage, "totalTokenCount")
-        if hasattr(usage, "input_tokens") and hasattr(usage, "output_tokens"):
-            return getattr(usage, "input_tokens") + getattr(usage, "output_tokens")
-        if isinstance(usage, dict):
-            if "total_tokens" in usage:
-                return usage["total_tokens"]
-            if "totalTokenCount" in usage:
-                return usage["totalTokenCount"]
-            if "input_tokens" in usage and "output_tokens" in usage:
-                return usage["input_tokens"] + usage["output_tokens"]
-        return None
+        match usage:
+            case None:
+                return None
+            case dict() as data:
+                if "total_tokens" in data:
+                    return data["total_tokens"]
+                if "totalTokenCount" in data:
+                    return data["totalTokenCount"]
+                if "input_tokens" in data and "output_tokens" in data:
+                    return data["input_tokens"] + data["output_tokens"]
+                return None
+            case _:
+                if hasattr(usage, "total_tokens"):
+                    return getattr(usage, "total_tokens")
+                if hasattr(usage, "totalTokenCount"):
+                    return getattr(usage, "totalTokenCount")
+                if hasattr(usage, "input_tokens") and hasattr(usage, "output_tokens"):
+                    return getattr(usage, "input_tokens") + getattr(usage, "output_tokens")
+                return None
 
     @staticmethod
     def _normalize_role(role: str | None) -> Role:
-        if role in ("system", "user", "assistant"):
-            return cast(Role, role)
-        return "assistant"
+        match role:
+            case "system" | "user" | "assistant":
+                return cast(Role, role)
+            case _:
+                return "assistant"

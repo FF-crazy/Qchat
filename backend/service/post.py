@@ -65,16 +65,23 @@ class RequestBuilder(BaseModel):
 
     def build_header(self) -> dict[str, str]:
         provider_type = self.provider.provider_type
-        if provider_type == "openai":
-            return self.build_openai_header()
-        if provider_type == "gemini":
-            return self.build_gemini_header()
-        if provider_type == "anthropic":
-            return self.build_anthropic_header()
-        raise ValueError(f"Unsupported provider type: {provider_type}")
+        match provider_type:
+            case "openai":
+                return self.build_openai_header()
+            case "gemini":
+                return self.build_gemini_header()
+            case "anthropic":
+                return self.build_anthropic_header()
+            case _:
+                raise ValueError(f"Unsupported provider type: {provider_type}")
 
     def build_openai_request_body(
-        self, model: str, stream: bool, reasoning_effort: Reasoning_effort | None
+        self,
+        model: str,
+        stream: bool,
+        reasoning_effort: Reasoning_effort | None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> OpenAIMessageRequest:
         messages = self.context_manager.export(ContextManager.encode_openai)
         req = OpenAIMessageRequest(
@@ -83,6 +90,10 @@ class RequestBuilder(BaseModel):
             messages=messages,
             stream=stream,
         )
+        if temperature is not None:
+            req.temperature = temperature
+        if max_tokens is not None:
+            req.max_tokens = max_tokens
         if req.stream:
             req.stream_options = {"include_usage": True}
         return req
@@ -92,11 +103,17 @@ class RequestBuilder(BaseModel):
         model: str,
         stream: bool,
         reasoning_effort: Literal["low", "high"] | None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> GeminiRequestAddition:
         system_instruction, contents = self.context_manager.export(
             ContextManager.encode_gemini
         )
         config = GeminiConfig()
+        if temperature is not None:
+            config.temperature = temperature
+        if max_tokens is not None:
+            config.maxOutputTokens = max_tokens
         if reasoning_effort is not None:
             config.thinkingConfig = GeminiThinkingConfig(
                 includeThoughts=True, thinkingLevel=reasoning_effort
@@ -111,21 +128,39 @@ class RequestBuilder(BaseModel):
             ),
         )
 
+    def _calculate_reasoning_effort(self, reason_effort: Reasoning_effort, max_token: int) -> int:
+        match reason_effort:
+            case "xhigh":
+                return int(max_token * 0.8)
+            case "high":
+                return int(max_token * 0.6)
+            case "medium":
+                return int(max_token * 0.4)
+            case "low":
+                return int(max_token * 0.2)
+
     def build_anthropic_request_body(
-        self, model: str, stream: bool, reasoning_budget: int | None
+        self,
+        model: str,
+        stream: bool,
+        reasoning_effort: Reasoning_effort | None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> AnthropicRequest:
         system_blocks, messages = self.context_manager.export(
             ContextManager.encode_anthropic
         )
         thinking = None
-        if reasoning_budget is not None:
+        max_tokens = max_tokens or 64000
+        if reasoning_effort is not None:
             thinking = AnthropicThinkingBlock(
                 type="enabled",
-                budget_tokens=reasoning_budget,
+                budget_tokens=self._calculate_reasoning_effort(reasoning_effort, max_tokens),
             )
         return AnthropicRequest(
             model=model,
-            max_tokens=64000,
+            max_tokens=max_tokens,
+            temperature=temperature,
             thinking=thinking,
             system=system_blocks or None,
             messages=messages,
@@ -310,6 +345,18 @@ class MessagePoster:
         except httpx.HTTPStatusError as e:
             raise e
 
+    async def get_model_list(self) -> OpenAIModelList | GeminiModelList | AnthropicModelList:
+        provider_type = self.request_builder.provider.provider_type
+        match provider_type:
+            case "openai":
+                return await self.openai_get_model_list()
+            case "gemini":
+                return await self.gemini_get_model_list()
+            case "anthropic":
+                return await self.anthropic_get_model_list()
+            case _:
+                raise ValueError(f"Unsupported provider type: {provider_type}")
+
     @overload
     async def post_message(
         self, payload: OpenAIMessageRequest
@@ -341,16 +388,18 @@ class MessagePoster:
     ) -> AsyncIterator[AnthropicStreamEvent]: ...
 
     async def post_message(self, payload: Any) -> Any:
-        if isinstance(payload, OpenAIMessageRequest):
-            if payload.stream:
-                return self.openai_post_stream(payload)
-            return await self.openai_post(payload)
-        if isinstance(payload, GeminiRequestAddition):
-            if payload.stream:
-                return self.gemini_post_stream(payload)
-            return await self.gemini_post(payload)
-        if isinstance(payload, AnthropicRequest):
-            if payload.stream:
-                return self.anthropic_post_stream(payload)
-            return await self.anthropic_post(payload)
-        raise ValueError(f"Unsupported payload type: {type(payload)}")
+        match payload:
+            case OpenAIMessageRequest():
+                if payload.stream:
+                    return self.openai_post_stream(payload)
+                return await self.openai_post(payload)
+            case GeminiRequestAddition():
+                if payload.stream:
+                    return self.gemini_post_stream(payload)
+                return await self.gemini_post(payload)
+            case AnthropicRequest():
+                if payload.stream:
+                    return self.anthropic_post_stream(payload)
+                return await self.anthropic_post(payload)
+            case _:
+                raise ValueError(f"Unsupported payload type: {type(payload)}")

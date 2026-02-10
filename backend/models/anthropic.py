@@ -19,10 +19,10 @@ class AnthropicThinkingBlock(BaseModel):
 class AnthropicRequest(BaseModel):
   model: str
   max_tokens: int = 64000
+  temperature: float | None = None
   thinking: AnthropicThinkingBlock | None = None
   system: list[AnthropicContentBlock] | None = None
   messages: list[AnthropicMessageBlock]
-  stream: bool = False
   stream: bool = False
 
 class AnthropicUsage(BaseModel):
