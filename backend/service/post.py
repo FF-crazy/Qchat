@@ -1,6 +1,5 @@
 from typing import Any, Literal, overload
 from collections.abc import AsyncIterator, Callable
-import inspect
 import httpx
 from pydantic import BaseModel
 
@@ -64,6 +63,16 @@ class RequestBuilder(BaseModel):
         ret["anthropic-beta"] = "interleaved-thinking-2025-05-14"
         return ret
 
+    def build_header(self) -> dict[str, str]:
+        provider_type = self.provider.provider_type
+        if provider_type == "openai":
+            return self.build_openai_header()
+        if provider_type == "gemini":
+            return self.build_gemini_header()
+        if provider_type == "anthropic":
+            return self.build_anthropic_header()
+        raise ValueError(f"Unsupported provider type: {provider_type}")
+
     def build_openai_request_body(
         self, model: str, stream: bool, reasoning_effort: Reasoning_effort | None
     ) -> OpenAIMessageRequest:
@@ -124,17 +133,6 @@ class RequestBuilder(BaseModel):
         )
 
 
-PostMethodName = Literal[
-    "openai_post",
-    "openai_post_stream",
-    "openai_post_stream_text",
-    "gemini_post",
-    "gemini_post_stream",
-    "gemini_post_stream_text",
-    "anthropic_post",
-    "anthropic_post_stream",
-    "anthropic_post_stream_text",
-]
 
 
 class MessagePoster:
@@ -160,7 +158,7 @@ class MessagePoster:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.post(
                 url=f"{self.request_builder.provider.base_url}{OPENAI_V1_CHAT}",
-                headers=self.request_builder.build_openai_header(),
+                headers=self.request_builder.build_header(),
                 json=payload.model_dump(),
             )
             response.raise_for_status()
@@ -175,7 +173,7 @@ class MessagePoster:
             async with self.HTTP_CLIENT.stream(
                 method="POST",
                 url=f"{self.request_builder.provider.base_url}{OPENAI_V1_CHAT}",
-                headers=self.request_builder.build_openai_header(),
+                headers=self.request_builder.build_header(),
                 json=payload.model_dump(),
                 timeout=600,
             ) as response:
@@ -201,7 +199,7 @@ class MessagePoster:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.get(
                 url=f"{self.request_builder.provider.base_url}{OPENAI_V1_MODEL}",
-                headers=self.request_builder.build_openai_header(),
+                headers=self.request_builder.build_header(),
             )
             response.raise_for_status()
             return OpenAIModelList.model_validate(response.json())
@@ -214,7 +212,7 @@ class MessagePoster:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.post(
                 url=url,
-                headers=self.request_builder.build_gemini_header(),
+                headers=self.request_builder.build_header(),
                 json=payload.request_body.model_dump(),
             )
             response.raise_for_status()
@@ -229,7 +227,7 @@ class MessagePoster:
             async with self.HTTP_CLIENT.stream(
                 method="POST",
                 url=url,
-                headers=self.request_builder.build_gemini_header(),
+                headers=self.request_builder.build_header(),
                 json=payload.request_body.model_dump(),
                 timeout=600,
             ) as response:
@@ -253,7 +251,7 @@ class MessagePoster:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.get(
                 url=f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}",
-                headers=self.request_builder.build_gemini_header(),
+                headers=self.request_builder.build_header(),
             )
             response.raise_for_status()
             return GeminiModelList.model_validate(response.json())
@@ -264,7 +262,7 @@ class MessagePoster:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.post(
                 url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1_MESSAGE}",
-                headers=self.request_builder.build_anthropic_header(),
+                headers=self.request_builder.build_header(),
                 json=payload.model_dump(),
             )
             response.raise_for_status()
@@ -278,7 +276,7 @@ class MessagePoster:
             async with self.HTTP_CLIENT.stream(
                 method="POST",
                 url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1_MESSAGE}",
-                headers=self.request_builder.build_anthropic_header(),
+                headers=self.request_builder.build_header(),
                 json=payload.model_dump(),
                 timeout=600,
             ) as response:
@@ -305,7 +303,7 @@ class MessagePoster:
         try:
             response = await self.HTTP_CLIENT.get(
                 url=f"{self.request_builder.provider.base_url}{ANTHROPIC_V1_MODEL}",
-                headers=self.request_builder.build_anthropic_header(),
+                headers=self.request_builder.build_header(),
             )
             response.raise_for_status()
             return AnthropicModelList.model_validate(response.json())
@@ -314,51 +312,45 @@ class MessagePoster:
 
     @overload
     async def post_message(
-        self, method: Literal["openai_post"], payload: OpenAIMessageRequest
+        self, payload: OpenAIMessageRequest
     ) -> OpenAIMessageResponse: ...
 
     @overload
     async def post_message(
-        self, method: Literal["openai_post_stream"], payload: OpenAIMessageRequest
+        self, payload: OpenAIMessageRequest
     ) -> AsyncIterator[OpenAIChunkResponse]: ...
 
     @overload
     async def post_message(
-        self, method: Literal["openai_post_stream_text"], payload: OpenAIMessageRequest
-    ) -> AsyncIterator[str]: ...
-
-    @overload
-    async def post_message(
-        self, method: Literal["gemini_post"], payload: GeminiRequestAddition
+        self, payload: GeminiRequestAddition
     ) -> GeminiResponse: ...
 
     @overload
     async def post_message(
-        self, method: Literal["gemini_post_stream"], payload: GeminiRequestAddition
+        self, payload: GeminiRequestAddition
     ) -> AsyncIterator[GeminiResponse]: ...
 
     @overload
     async def post_message(
-        self, method: Literal["gemini_post_stream_text"], payload: GeminiRequestAddition
-    ) -> AsyncIterator[str]: ...
-
-    @overload
-    async def post_message(
-        self, method: Literal["anthropic_post"], payload: AnthropicRequest
+        self, payload: AnthropicRequest
     ) -> AnthropicResponse: ...
 
     @overload
     async def post_message(
-        self, method: Literal["anthropic_post_stream"], payload: AnthropicRequest
+        self, payload: AnthropicRequest
     ) -> AsyncIterator[AnthropicStreamEvent]: ...
 
-    @overload
-    async def post_message(
-        self, method: Literal["anthropic_post_stream_text"], payload: AnthropicRequest
-    ) -> AsyncIterator[str]: ...
-
-    async def post_message(self, method: PostMethodName, payload: Any):
-        fn: Callable = getattr(self, method)
-        if inspect.isasyncgenfunction(fn):
-            return fn(payload)
-        return await fn(payload)
+    async def post_message(self, payload: Any) -> Any:
+        if isinstance(payload, OpenAIMessageRequest):
+            if payload.stream:
+                return self.openai_post_stream(payload)
+            return await self.openai_post(payload)
+        if isinstance(payload, GeminiRequestAddition):
+            if payload.stream:
+                return self.gemini_post_stream(payload)
+            return await self.gemini_post(payload)
+        if isinstance(payload, AnthropicRequest):
+            if payload.stream:
+                return self.anthropic_post_stream(payload)
+            return await self.anthropic_post(payload)
+        raise ValueError(f"Unsupported payload type: {type(payload)}")
