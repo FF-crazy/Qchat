@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Any, Literal
 
-type REASONING_EFFORT = Literal["low", "medium", "high", "xhigh"]
+type Reasoning_effort = Literal["low", "medium", "high", "xhigh"]
 
 
 class OpenAIMessageBlock(BaseModel):
@@ -19,7 +19,7 @@ class OpenAIMessageRequest(BaseModel):
     max_tokens: int = 64000
     temperature: float | None = None
     top_p: float | None = None
-    reasoning_effort: REASONING_EFFORT | None = None
+    reasoning_effort: Reasoning_effort | None = None
     messages: list[OpenAIMessageBlock]
     stream: bool = False
     stream_options: dict[str, bool] | None = None

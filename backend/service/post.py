@@ -1,4 +1,5 @@
-from typing import Any, AsyncIterator, Callable, Literal, overload
+from typing import Any, Literal, overload
+from collections.abc import AsyncIterator, Callable
 import inspect
 import httpx
 from pydantic import BaseModel
@@ -8,18 +9,19 @@ from backend.models.anthropic import (
     AnthropicRequest,
     AnthropicResponse,
     AnthropicStreamEvent,
+    AnthropicThinkingBlock,
 )
 from backend.models.gemini import (
     GeminiConfig,
     GeminiModelList,
     GeminiRequest,
-    GeminiRequestWithModel,
+    GeminiRequestAddition,
     GeminiResponse,
     GeminiThinkingConfig,
 )
 from backend.models.local import Provider
 from backend.models.openai import (
-    REASONING_EFFORT,
+    Reasoning_effort,
     OpenAIChunkResponse,
     OpenAIError,
     OpenAIModelList,
@@ -28,7 +30,7 @@ from backend.models.openai import (
 )
 import certifi
 
-from backend.service.context import ContextManager, encode_gemini, encode_openai
+from backend.service.context import ContextManager
 
 OPENAI_V1_CHAT = "/v1/chat/completions"
 OPENAI_V1_MODEL = "/v1/models"
@@ -63,9 +65,9 @@ class RequestBuilder(BaseModel):
         return ret
 
     def build_openai_request_body(
-        self, model: str, stream: bool, reasoning_effort: REASONING_EFFORT | None
+        self, model: str, stream: bool, reasoning_effort: Reasoning_effort | None
     ) -> OpenAIMessageRequest:
-        messages = self.context_manager.export(encode_openai)
+        messages = self.context_manager.export(ContextManager.encode_openai)
         req = OpenAIMessageRequest(
             model=model,
             reasoning_effort=reasoning_effort,
@@ -81,20 +83,44 @@ class RequestBuilder(BaseModel):
         model: str,
         stream: bool,
         reasoning_effort: Literal["low", "high"] | None,
-    ) -> GeminiRequestWithModel:
-        system_instruction, contents = self.context_manager.export(encode_gemini)
+    ) -> GeminiRequestAddition:
+        system_instruction, contents = self.context_manager.export(
+            ContextManager.encode_gemini
+        )
         config = GeminiConfig()
         if reasoning_effort is not None:
             config.thinkingConfig = GeminiThinkingConfig(
                 includeThoughts=True, thinkingLevel=reasoning_effort
             )
-        return GeminiRequestWithModel(
+        return GeminiRequestAddition(
             model=model,
+            stream=stream,
             request_body=GeminiRequest(
                 generationConfig=config,
                 contents=contents,
                 systemInstruction=system_instruction,
             ),
+        )
+
+    def build_anthropic_request_body(
+        self, model: str, stream: bool, reasoning_budget: int | None
+    ) -> AnthropicRequest:
+        system_blocks, messages = self.context_manager.export(
+            ContextManager.encode_anthropic
+        )
+        thinking = None
+        if reasoning_budget is not None:
+            thinking = AnthropicThinkingBlock(
+                type="enabled",
+                budget_tokens=reasoning_budget,
+            )
+        return AnthropicRequest(
+            model=model,
+            max_tokens=64000,
+            thinking=thinking,
+            system=system_blocks or None,
+            messages=messages,
+            stream=stream,
         )
 
 
@@ -112,14 +138,13 @@ PostMethodName = Literal[
 
 
 class MessagePoster:
-
     def __init__(
         self, provider: Provider, context_manager: ContextManager | None = None
     ) -> None:
         self.HTTP_CLIENT = httpx.AsyncClient(timeout=None, verify=certifi.where())
         # TODO: Modify this after ai_model completion
         if context_manager is None:
-            context_manager = ContextManager(context=list(), MAX_TOKEN=64000)
+            context_manager = ContextManager(context=list())
         self.request_builder = RequestBuilder(
             context_manager=context_manager, provider=provider
         )
@@ -184,7 +209,7 @@ class MessagePoster:
             self._raise_openai_error(e)
             raise RuntimeError()  # never run this line
 
-    async def gemini_post(self, payload: GeminiRequestWithModel) -> GeminiResponse:
+    async def gemini_post(self, payload: GeminiRequestAddition) -> GeminiResponse:
         url: str = f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}/{payload.model}:generateContent"
         try:
             response: httpx.Response = await self.HTTP_CLIENT.post(
@@ -198,7 +223,7 @@ class MessagePoster:
         except httpx.HTTPStatusError as e:
             raise e
 
-    async def gemini_post_stream(self, payload: GeminiRequestWithModel):
+    async def gemini_post_stream(self, payload: GeminiRequestAddition):
         url = f"{self.request_builder.provider.base_url}{GEMINI_V1BETA}/{payload.model}:streamGenerateContent?alt=sse"
         try:
             async with self.HTTP_CLIENT.stream(
@@ -217,7 +242,7 @@ class MessagePoster:
         except httpx.HTTPStatusError as e:
             raise e
 
-    async def gemini_post_stream_text(self, payload: GeminiRequestWithModel):
+    async def gemini_post_stream_text(self, payload: GeminiRequestAddition):
         async for chunk in self.gemini_post_stream(payload):
             for candidate in chunk.candidates:
                 for part in candidate.content.parts:
@@ -234,7 +259,7 @@ class MessagePoster:
             return GeminiModelList.model_validate(response.json())
         except httpx.HTTPStatusError as e:
             raise e
-        
+
     async def anthropic_post(self, payload: AnthropicRequest) -> AnthropicResponse:
         try:
             response: httpx.Response = await self.HTTP_CLIENT.post(
@@ -286,7 +311,7 @@ class MessagePoster:
             return AnthropicModelList.model_validate(response.json())
         except httpx.HTTPStatusError as e:
             raise e
-    
+
     @overload
     async def post_message(
         self, method: Literal["openai_post"], payload: OpenAIMessageRequest
@@ -304,17 +329,17 @@ class MessagePoster:
 
     @overload
     async def post_message(
-        self, method: Literal["gemini_post"], payload: GeminiRequestWithModel
+        self, method: Literal["gemini_post"], payload: GeminiRequestAddition
     ) -> GeminiResponse: ...
 
     @overload
     async def post_message(
-        self, method: Literal["gemini_post_stream"], payload: GeminiRequestWithModel
+        self, method: Literal["gemini_post_stream"], payload: GeminiRequestAddition
     ) -> AsyncIterator[GeminiResponse]: ...
 
     @overload
     async def post_message(
-        self, method: Literal["gemini_post_stream_text"], payload: GeminiRequestWithModel
+        self, method: Literal["gemini_post_stream_text"], payload: GeminiRequestAddition
     ) -> AsyncIterator[str]: ...
 
     @overload

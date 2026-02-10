@@ -30,10 +30,11 @@ class GeminiRequest(BaseModel):
     systemInstruction: list[GeminiMessagePart] | None = None
 
 
-class GeminiRequestWithModel(BaseModel):
+class GeminiRequestAddition(BaseModel):
     """Google's style is to concatenate the model name into the URL. In order to unify the interface, I had to add a new class."""
 
     model: str
+    stream: bool = False
     request_body: GeminiRequest
 
 
