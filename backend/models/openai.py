@@ -2,13 +2,34 @@ from pydantic import BaseModel
 from typing import Any, Literal
 
 type Reasoning_effort = Literal["low", "medium", "high", "xhigh"]
+type Tool_choice = Literal["auto", "none", "required"] | dict[str, Any]
 
+class OpenAIToolFunctionBlock(BaseModel):
+    name: str
+    description: str | None = None
+    parameters: dict[str, Any] | None = None
+    required: list[str] | None = None
+    arguments: str | None = None
+    model_config = {"extra": "allow"}
+
+class OpenAITool(BaseModel):
+    type: str = "function"
+    function: OpenAIToolFunctionBlock
+
+class OpenAIToolCallMessage(BaseModel):
+    index: int | None = None
+    id: str | None = None
+    type: str | None = "function"
+    function: OpenAIToolFunctionBlock | None = None
+    model_config = {"extra": "allow"}
 
 class OpenAIMessageBlock(BaseModel):
     """using stream and normal"""
 
     role: str | None = None
+    tool_call_id : str | None = None
     content: str | None = None
+    tool_calls: list[OpenAIToolCallMessage] | None = None
     refusal: str | None = None
     annotations: list[dict[str, Any]] | None = None
     model_config = {"extra": "allow"}
@@ -23,6 +44,8 @@ class OpenAIMessageRequest(BaseModel):
     messages: list[OpenAIMessageBlock]
     stream: bool = False
     stream_options: dict[str, bool] | None = None
+    tools: list[OpenAITool] | None = None
+    tool_choice: Tool_choice | None = None
 
 
 class OpenAIResponseBlock(BaseModel):
@@ -58,20 +81,6 @@ class OpenAIChunkResponse(BaseModel):
     usage: OpenAIUsage | None = None
     model_config = {"extra": "allow"}
 
-
-class OpenAIModelInfo(BaseModel):
-    id: str
-    object: str = "model"
-    created: int
-    owned_by: str
-
-
-class OpenAIModelList(BaseModel):
-    data: list[OpenAIModelInfo]
-    object: str = "list"
-    success: bool = True
-
-
 class OpenAIMessageResponse(BaseModel):
     id: str
     object: str
@@ -80,6 +89,17 @@ class OpenAIMessageResponse(BaseModel):
     choices: list[OpenAIResponseBlock]
     usage: OpenAIUsage
     model_config = {"extra": "allow"}
+
+class OpenAIModelInfo(BaseModel):
+    id: str
+    object: str = "model"
+    created: int
+    owned_by: str
+
+class OpenAIModelList(BaseModel):
+    data: list[OpenAIModelInfo]
+    object: str = "list"
+    success: bool = True
 
 
 class OpenAIErrorDetail(BaseModel):

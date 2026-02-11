@@ -9,6 +9,7 @@ from backend.models.anthropic import (
     AnthropicResponse,
     AnthropicStreamEvent,
     AnthropicThinkingBlock,
+    AnthropicToolCall,
 )
 from backend.models.gemini import (
     GeminiConfig,
@@ -182,12 +183,42 @@ class MessagePoster:
             context_manager=context_manager, provider=provider
         )
 
+    def switch_context(self, context_manager: ContextManager) -> None:
+        self.request_builder.context_manager = context_manager
+
+    def switch_provider(self, provider: Provider) -> None:
+        self.request_builder.provider = provider
+
+
     def _raise_openai_error(self, exc: httpx.HTTPStatusError) -> None:
         try:
             err = OpenAIError.model_validate(exc.response.json())
             raise RuntimeError(f"OpenAI API error: {err.error.message}") from exc
         except Exception:
             raise exc
+
+    @staticmethod
+    async def iter_sse_json_payloads(lines: AsyncIterator[str]) -> AsyncIterator[str]:
+        data_lines: list[str] = []
+        async for raw_line in lines:
+            line = raw_line.rstrip("\r")
+            if line == "":
+                if data_lines:
+                    payload = "\n".join(data_lines).strip()
+                    if payload and payload != "[DONE]":
+                        yield payload
+                    data_lines = []
+                continue
+            if line.startswith(":"):
+                continue
+            if line.startswith("data:"):
+                data_lines.append(line[5:].lstrip())
+                continue
+
+        if data_lines:
+            payload = "\n".join(data_lines).strip()
+            if payload and payload != "[DONE]":
+                yield payload
 
     async def openai_post(self, payload: OpenAIMessageRequest) -> OpenAIMessageResponse:
         try:
@@ -316,13 +347,8 @@ class MessagePoster:
                 timeout=600,
             ) as response:
                 response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data = line[6:].strip()
-                    if not data:
-                        continue
-                    yield AnthropicStreamEvent.model_validate_json(data)
+                async for payload_json in self.iter_sse_json_payloads(response.aiter_lines()):
+                    yield AnthropicStreamEvent.model_validate_json(payload_json)
         except httpx.HTTPStatusError as e:
             raise e
 
@@ -333,6 +359,13 @@ class MessagePoster:
                     text = event.delta.get("text")
                     if text:
                         yield text
+
+    async def anthropic_post_stream_tool_calls(self, payload: AnthropicRequest):
+        buffers: dict[int, AnthropicToolCall] = {}
+        async for event in self.anthropic_post_stream(payload):
+            tool_call = ContextManager.decode_anthropic_stream_tool_call(event, buffers)
+            if tool_call is not None:
+                yield tool_call
 
     async def anthropic_get_model_list(self) -> AnthropicModelList:
         try:

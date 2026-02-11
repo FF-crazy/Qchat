@@ -1,10 +1,12 @@
 from typing import Any, Literal, cast
 from collections.abc import Callable, Sequence
 from pydantic import BaseModel
+import json
 
 from backend.models.anthropic import (
     AnthropicContentBlock,
     AnthropicMessageBlock,
+    AnthropicToolCall,
     AnthropicResponse,
     AnthropicStreamEvent,
 )
@@ -178,6 +180,37 @@ class ContextManager(BaseModel):
                 )
             ]
         return []
+
+    @staticmethod
+    def decode_anthropic_stream_tool_call(
+        event: AnthropicStreamEvent,
+        buffers: dict[int, AnthropicToolCall],
+    ) -> AnthropicToolCall | None:
+        if event.type == "content_block_start" and event.content_block and event.index is not None:
+            if event.content_block.get("type") == "tool_use":
+                buffers[event.index] = AnthropicToolCall(
+                    id=event.content_block.get("id") or "",
+                    name=event.content_block.get("name") or "",
+                    input_json="",
+                )
+            return None
+
+        if event.type == "content_block_delta" and event.delta and event.index is not None:
+            if event.delta.get("type") == "input_json_delta" and event.index in buffers:
+                buffers[event.index].input_json += event.delta.get("partial_json") or ""
+            return None
+
+        if event.type == "content_block_stop" and event.index is not None and event.index in buffers:
+            tool_call = buffers.pop(event.index)
+            raw = tool_call.input_json.strip()
+            if raw:
+                try:
+                    tool_call.input = json.loads(raw)
+                except Exception:
+                    tool_call.input = None
+            return tool_call
+
+        return None
 
     @staticmethod
     def decode_gemini(response: GeminiResponse) -> list[CanonicalMessage]:
