@@ -1,7 +1,27 @@
-from pydantic import BaseModel, Field, model_validator
-from typing import Literal
+from __future__ import annotations
 
-from backend.service.context import CanonicalMessage, ContentPart, ContextManager
+from typing import Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.service.context import ContextManager
+
+from pydantic import BaseModel, Field, model_validator
+
+
+Role = Literal["system", "user", "assistant"]
+PartType = Literal["text", "thinking"]
+
+
+class ContentPart(BaseModel):
+    type: PartType
+    text: str
+    signature: str | None = None
+
+
+class CanonicalMessage(BaseModel):
+    role: Role
+    content: list[ContentPart]
+
 
 class Provider(BaseModel):
     provider_name: str
@@ -13,11 +33,12 @@ class Provider(BaseModel):
         "populate_by_name": True,
     }
 
+
 class Prompt(BaseModel):
-    prompt_id: int = Field(default=0)
     prompt_name: str
     description: str = Field(default="")
     content: str
+
 
 class Agent(BaseModel):
     prompt: Prompt | None = None
@@ -25,6 +46,8 @@ class Agent(BaseModel):
 
     @staticmethod
     def make_sessions(prompt: Prompt | None) -> list[ContextManager]:
+        from backend.service.context import ContextManager
+
         context: list[CanonicalMessage] = []
         if prompt is not None:
             context.append(
@@ -41,11 +64,14 @@ class Agent(BaseModel):
             self.sessions = self.make_sessions(self.prompt)
         return self
 
+
 type Context_type = Literal["text", "image"]
+
 
 class QchatModelInfo(BaseModel):
     model_name: str
     support_context: list[Context_type]
+
 
 class QchatModelList(BaseModel):
     model_list: list[QchatModelInfo]

@@ -1,7 +1,10 @@
-from typing import Any, Literal, cast
+from __future__ import annotations
+
 from collections.abc import Callable, Sequence
-from pydantic import BaseModel
 import json
+from typing import Any, cast
+
+from pydantic import BaseModel
 
 from backend.models.anthropic import (
     AnthropicContentBlock,
@@ -11,25 +14,12 @@ from backend.models.anthropic import (
     AnthropicStreamEvent,
 )
 from backend.models.gemini import GeminiMessageBlock, GeminiMessagePart, GeminiResponse
+from backend.models.local import CanonicalMessage, ContentPart, Role
 from backend.models.openai import (
     OpenAIChunkResponse,
     OpenAIMessageBlock,
     OpenAIMessageResponse,
 )
-
-Role = Literal["system", "user", "assistant"]
-PartType = Literal["text", "thinking"]
-
-
-class ContentPart(BaseModel):
-    type: PartType
-    text: str
-    signature: str | None = None
-
-
-class CanonicalMessage(BaseModel):
-    role: Role
-    content: list[ContentPart]
 
 
 class ContextManager(BaseModel):
@@ -52,7 +42,6 @@ class ContextManager(BaseModel):
 
     def export(self, encoder: Callable[[Sequence[CanonicalMessage]], Any]) -> Any:
         return encoder(self.context)
-
 
     @staticmethod
     def _only_text(parts: Sequence[ContentPart]) -> list[str]:
@@ -148,7 +137,9 @@ class ContextManager(BaseModel):
                         signature=block.signature,
                     )
                 )
-        return [CanonicalMessage(role=ContextManager._normalize_role(response.role), content=content)]
+        return [
+            CanonicalMessage(role=ContextManager._normalize_role(response.role), content=content)
+        ]
 
     @staticmethod
     def decode_anthropic_stream(event: AnthropicStreamEvent) -> list[CanonicalMessage]:
@@ -173,9 +164,7 @@ class ContextManager(BaseModel):
                 CanonicalMessage(
                     role="assistant",
                     content=[
-                        ContentPart(
-                            type="thinking", text=thinking, signature=signature
-                        )
+                        ContentPart(type="thinking", text=thinking, signature=signature)
                     ],
                 )
             ]
@@ -186,7 +175,11 @@ class ContextManager(BaseModel):
         event: AnthropicStreamEvent,
         buffers: dict[int, AnthropicToolCall],
     ) -> AnthropicToolCall | None:
-        if event.type == "content_block_start" and event.content_block and event.index is not None:
+        if (
+            event.type == "content_block_start"
+            and event.content_block
+            and event.index is not None
+        ):
             if event.content_block.get("type") == "tool_use":
                 buffers[event.index] = AnthropicToolCall(
                     id=event.content_block.get("id") or "",
@@ -200,7 +193,11 @@ class ContextManager(BaseModel):
                 buffers[event.index].input_json += event.delta.get("partial_json") or ""
             return None
 
-        if event.type == "content_block_stop" and event.index is not None and event.index in buffers:
+        if (
+            event.type == "content_block_stop"
+            and event.index is not None
+            and event.index in buffers
+        ):
             tool_call = buffers.pop(event.index)
             raw = tool_call.input_json.strip()
             if raw:
@@ -216,7 +213,7 @@ class ContextManager(BaseModel):
     def decode_gemini(response: GeminiResponse) -> list[CanonicalMessage]:
         messages: list[CanonicalMessage] = []
         for candidate in response.candidates:
-            parts = []
+            parts: list[ContentPart] = []
             for part in candidate.content.parts:
                 if part.text:
                     parts.append(ContentPart(type="text", text=part.text))

@@ -2,6 +2,7 @@ from typing import Any, Literal, overload
 from collections.abc import AsyncIterator, Callable
 import httpx
 from pydantic import BaseModel
+import certifi
 
 from backend.models.anthropic import (
     AnthropicModelList,
@@ -20,6 +21,7 @@ from backend.models.gemini import (
     GeminiThinkingConfig,
 )
 from backend.models.local import Provider
+from backend.models.local import QchatModelList
 from backend.models.openai import (
     Reasoning_effort,
     OpenAIChunkResponse,
@@ -28,9 +30,9 @@ from backend.models.openai import (
     OpenAIMessageRequest,
     OpenAIMessageResponse,
 )
-import certifi
 
 from backend.service.context import ContextManager
+from backend.service.model_converter import ModelListConverter
 
 OPENAI_V1_CHAT = "/v1/chat/completions"
 OPENAI_V1_MODEL = "/v1/models"
@@ -389,6 +391,10 @@ class MessagePoster:
                 return await self.anthropic_get_model_list()
             case _:
                 raise ValueError(f"Unsupported provider type: {provider_type}")
+
+    async def get_qchat_model_list(self) -> QchatModelList:
+        raw_model_list = await self.get_model_list()
+        return ModelListConverter.to_qchat_model_list(raw_model_list)
 
     @overload
     async def post_message(
