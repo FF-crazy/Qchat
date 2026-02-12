@@ -4,7 +4,6 @@ from typing import Literal
 from backend.service.context import CanonicalMessage, ContentPart, ContextManager
 
 class Provider(BaseModel):
-    provider_id: int = Field(default=0)
     provider_name: str
     provider_type: Literal["openai", "gemini", "anthropic"]
     base_url: str
