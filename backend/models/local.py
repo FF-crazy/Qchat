@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import Literal, TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
+
+from pydantic import BaseModel, Field, model_validator
 
 if TYPE_CHECKING:
     from backend.service.context import ContextManager
-
-from pydantic import BaseModel, Field, model_validator
 
 
 Role = Literal["system", "user", "assistant"]
@@ -75,3 +75,10 @@ class QchatModelInfo(BaseModel):
 
 class QchatModelList(BaseModel):
     model_list: list[QchatModelInfo]
+
+class CurrentLocalConfig(BaseModel):
+    provider: str | None = None
+    agent: Agent | None = None
+    stream: bool = False
+    max_tokens: int = 65536
+    temperature: float = 1.0

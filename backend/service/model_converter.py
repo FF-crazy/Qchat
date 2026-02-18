@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from backend.models.anthropic import AnthropicModelList
 from backend.models.gemini import GeminiModelList
-from backend.models.local import Context_type, QchatModelInfo, QchatModelList
+from backend.models.local import Context_type, QchatModelInfo, QchatModelList, CurrentLocalConfig
 from backend.models.openai import OpenAIModelList
 
 
@@ -86,3 +86,4 @@ class ModelListConverter:
         if name.startswith("models/"):
             return name[len("models/") :]
         return name
+

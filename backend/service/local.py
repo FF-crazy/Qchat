@@ -4,7 +4,7 @@ from typing import Any
 import tomllib
 import logging
 
-from backend.models.local import Prompt, Provider
+from backend.models.local import Prompt, Provider, CurrentLocalConfig, Agent
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -90,3 +90,32 @@ class ProviderProcessor:
             raise KeyError(f"Provider not found: {name}")
         cls.current = name
         return provider
+    
+    @classmethod
+    def get_all_providers(cls) -> dict[str, Provider]:
+        return cls.providers
+    
+    @classmethod
+    def set_current_provider(cls, name: str) -> Provider:
+        if name not in cls.providers:
+            logger.error(f"Provider not found: {name}")
+            raise KeyError(f"Provider not found: {name}")
+        cls.current = name
+        return cls.providers[name]
+
+
+class ConfigManager:
+    def __init__(self, config: CurrentLocalConfig) -> None:
+        self._config: CurrentLocalConfig = config
+
+    def get_config(self) -> CurrentLocalConfig:
+        return self._config
+
+    def update_config(self, new_config: CurrentLocalConfig) -> None:
+        self._config = new_config
+
+    def update_provider(self, provider: str) -> None:
+        self._config.provider = provider
+
+    def get_config_dict(self) -> dict:
+        return self._config.model_dump()

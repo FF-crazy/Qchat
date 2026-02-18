@@ -1,14 +1,32 @@
 from fastapi import FastAPI
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
 import uvicorn
 from random import randint
 import sys
 import signal
 import socket
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 
-app = FastAPI(title="Qchat backend API")
+from backend.api.chat import chat_router
+from backend.models.local import CurrentLocalConfig, Provider
+from backend.service.local import ConfigManager, FileProcessor, ProviderProcessor
+
 security = HTTPBearer(auto_error=False)
+API_VERSION: str = "v1"
 
+@asynccontextmanager
+async def init_api(app: FastAPI) -> AsyncIterator[None]:
+    FileProcessor.init()
+    providers: dict[str, Provider] = FileProcessor.load_providers()
+    ProviderProcessor.set_providers(providers)
+    current_provider: str | None = next(iter(providers), None)
+    app.state.config_manager = ConfigManager(CurrentLocalConfig(provider=current_provider))
+    app.include_router(chat_router)
+    yield
+
+
+app: FastAPI = FastAPI(title="Qchat backend API", version=API_VERSION, lifespan=init_api)
 
 def is_port_available(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -39,7 +57,6 @@ def main() -> None:
     # 注册信号处理器，支持 Ctrl+C 退出
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
     try:
         port = find_available_port()
         print(f"服务启动在端口: {port}")
