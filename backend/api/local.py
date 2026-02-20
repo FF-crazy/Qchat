@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from backend.api.deps import get_config_manager
 from backend.models.local import CurrentLocalConfig
-from backend.service.local import ConfigManager
+from backend.service.local import ConfigManager, ProviderProcessor, FileProcessor
 
 local_router = APIRouter(prefix="/local")
 
@@ -19,3 +19,8 @@ async def update_config(
 ) -> dict:
     config_manager.update_config(config)
     return config_manager.get_config_dict()
+
+
+@local_router.post("/providers")
+async def get_all_providers() -> list[str]:
+    return list(ProviderProcessor.get_all_providers().keys())

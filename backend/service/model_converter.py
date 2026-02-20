@@ -1,9 +1,20 @@
 from collections.abc import Callable
+from time import time
+from typing import Literal
 
+from backend.models.anthropic import AnthropicRequest, AnthropicResponse
 from backend.models.anthropic import AnthropicModelList
+from backend.models.gemini import GeminiConfig, GeminiRequest, GeminiRequestAddition, GeminiResponse
 from backend.models.gemini import GeminiModelList
-from backend.models.local import Context_type, QchatModelInfo, QchatModelList, CurrentLocalConfig
-from backend.models.openai import OpenAIModelList
+from backend.models.local import (
+    Context_type,
+    QchatModelInfo,
+    QchatModelList,
+    QchatRequest,
+    QchatResponse,
+)
+from backend.models.openai import OpenAIMessageRequest, OpenAIMessageResponse, OpenAIModelList
+from backend.service.context import ContextManager
 
 
 class ModelListConverter:
@@ -87,3 +98,86 @@ class ModelListConverter:
             return name[len("models/") :]
         return name
 
+
+class MessageConverter:
+    @staticmethod
+    def to_provider_request(
+        provider_type: Literal["openai", "gemini", "anthropic"],
+        request: QchatRequest,
+    ) -> OpenAIMessageRequest | GeminiRequestAddition | AnthropicRequest:
+        match provider_type:
+            case "openai":
+                return OpenAIMessageRequest(
+                    model=request.model,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    messages=request.messages.export(ContextManager.encode_openai),
+                    stream=request.stream,
+                    stream_options={"include_usage": True} if request.stream else None,
+                )
+            case "gemini":
+                system_instruction, contents = request.messages.export(
+                    ContextManager.encode_gemini
+                )
+                return GeminiRequestAddition(
+                    model=request.model,
+                    stream=request.stream,
+                    request_body=GeminiRequest(
+                        generationConfig=GeminiConfig(
+                            maxOutputTokens=request.max_tokens,
+                            temperature=request.temperature,
+                        ),
+                        contents=contents,
+                        systemInstruction=system_instruction,
+                    ),
+                )
+            case "anthropic":
+                system_blocks, messages = request.messages.export(
+                    ContextManager.encode_anthropic
+                )
+                return AnthropicRequest(
+                    model=request.model,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    system=system_blocks or None,
+                    messages=messages,
+                    stream=request.stream,
+                )
+            case _:
+                raise ValueError(f"Unsupported provider type: {provider_type}")
+
+    @staticmethod
+    def to_qchat_response(
+        response: OpenAIMessageResponse | GeminiResponse | AnthropicResponse,
+    ) -> QchatResponse:
+        now = int(time())
+        match response:
+            case OpenAIMessageResponse():
+                return QchatResponse(
+                    id=response.id,
+                    object=response.object,
+                    created=response.created,
+                    model=response.model,
+                    choices=[choice.model_dump() for choice in response.choices],
+                    usage=response.usage.model_dump(),
+                )
+            case GeminiResponse():
+                return QchatResponse(
+                    id=response.responseId or "",
+                    object="gemini.response",
+                    created=now,
+                    model=response.modelVersion or "",
+                    choices=[candidate.model_dump() for candidate in response.candidates],
+                    usage=response.usageMetadata.model_dump(),
+                )
+            case AnthropicResponse():
+                return QchatResponse(
+                    id=response.id,
+                    object=response.type,
+                    created=now,
+                    model=response.model,
+                    choices=[content.model_dump() for content in response.content],
+                    usage=response.usage.model_dump(),
+                )
+            case _:
+                raise ValueError(f"Unsupported response type: {type(response)}")

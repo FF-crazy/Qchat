@@ -1,5 +1,6 @@
-from typing import Any, Literal, overload
+from typing import Any, Literal
 from collections.abc import AsyncIterator, Callable
+import json
 import httpx
 from pydantic import BaseModel
 import certifi
@@ -20,8 +21,7 @@ from backend.models.gemini import (
     GeminiResponse,
     GeminiThinkingConfig,
 )
-from backend.models.local import Provider
-from backend.models.local import QchatModelList
+from backend.models.local import CanonicalMessage, Provider, QchatModelList, QchatRequest, QchatResponse
 from backend.models.openai import (
     Reasoning_effort,
     OpenAIChunkResponse,
@@ -32,7 +32,7 @@ from backend.models.openai import (
 )
 
 from backend.service.context import ContextManager
-from backend.service.model_converter import ModelListConverter
+from backend.service.model_converter import MessageConverter, ModelListConverter
 
 OPENAI_V1_CHAT = "/v1/chat/completions"
 OPENAI_V1_MODEL = "/v1/models"
@@ -396,37 +396,7 @@ class MessagePoster:
         raw_model_list = await self.get_model_list()
         return ModelListConverter.to_qchat_model_list(raw_model_list)
 
-    @overload
-    async def post_message(
-        self, payload: OpenAIMessageRequest
-    ) -> OpenAIMessageResponse: ...
-
-    @overload
-    async def post_message(
-        self, payload: OpenAIMessageRequest
-    ) -> AsyncIterator[OpenAIChunkResponse]: ...
-
-    @overload
-    async def post_message(
-        self, payload: GeminiRequestAddition
-    ) -> GeminiResponse: ...
-
-    @overload
-    async def post_message(
-        self, payload: GeminiRequestAddition
-    ) -> AsyncIterator[GeminiResponse]: ...
-
-    @overload
-    async def post_message(
-        self, payload: AnthropicRequest
-    ) -> AnthropicResponse: ...
-
-    @overload
-    async def post_message(
-        self, payload: AnthropicRequest
-    ) -> AsyncIterator[AnthropicStreamEvent]: ...
-
-    async def post_message(self, payload: Any) -> Any:
+    async def _post_provider_message(self, payload: Any) -> Any:
         match payload:
             case OpenAIMessageRequest():
                 if payload.stream:
@@ -442,3 +412,53 @@ class MessagePoster:
                 return await self.anthropic_post(payload)
             case _:
                 raise ValueError(f"Unsupported payload type: {type(payload)}")
+
+    @staticmethod
+    def _iter_text_parts(messages: list[CanonicalMessage]) -> list[str]:
+        texts: list[str] = []
+        for message in messages:
+            for part in message.content:
+                if part.type == "text" and part.text:
+                    texts.append(part.text)
+        return texts
+
+    @staticmethod
+    def _sse_delta(text: str) -> str:
+        return f"data: {json.dumps({delta: text}, ensure_ascii=False)}\\n\\n"
+
+    async def post_message(self, request: QchatRequest) -> QchatResponse:
+        if request.stream:
+            raise ValueError("For stream requests, call post_message_stream().")
+        provider_request = MessageConverter.to_provider_request(
+            self.request_builder.provider.provider_type,
+            request,
+        )
+        response = await self._post_provider_message(provider_request)
+        return MessageConverter.to_qchat_response(response)
+
+    async def post_message_stream(self, request: QchatRequest) -> AsyncIterator[str]:
+        if not request.stream:
+            raise ValueError("post_message_stream() requires request.stream=True")
+
+        provider_request = MessageConverter.to_provider_request(
+            self.request_builder.provider.provider_type,
+            request,
+        )
+
+        match provider_request:
+            case OpenAIMessageRequest():
+                async for chunk in self.openai_post_stream(provider_request):
+                    for text in self._iter_text_parts(ContextManager.decode_openai_stream(chunk)):
+                        yield self._sse_delta(text)
+            case GeminiRequestAddition():
+                async for chunk in self.gemini_post_stream(provider_request):
+                    for text in self._iter_text_parts(ContextManager.decode_gemini(chunk)):
+                        yield self._sse_delta(text)
+            case AnthropicRequest():
+                async for chunk in self.anthropic_post_stream(provider_request):
+                    for text in self._iter_text_parts(ContextManager.decode_anthropic_stream(chunk)):
+                        yield self._sse_delta(text)
+            case _:
+                raise ValueError(f"Unsupported request type: {type(provider_request)}")
+
+        yield "data: [DONE]\\n\\n"

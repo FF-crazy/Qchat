@@ -22,6 +22,21 @@ class CanonicalMessage(BaseModel):
     role: Role
     content: list[ContentPart]
 
+class QchatRequest(BaseModel):
+    model: str
+    messages: ContextManager
+    stream: bool = False
+    max_tokens: int = 65536
+    temperature: float = 1.0
+
+class QchatResponse(BaseModel):
+    id: str
+    object: str
+    created: int
+    model: str
+    choices: list[dict]
+    usage: dict
+
 
 class Provider(BaseModel):
     provider_name: str
@@ -78,6 +93,7 @@ class QchatModelList(BaseModel):
 
 class CurrentLocalConfig(BaseModel):
     provider: str | None = None
+    provider_type: str | None = None
     agent: Agent | None = None
     stream: bool = False
     max_tokens: int = 65536

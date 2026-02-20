@@ -116,6 +116,7 @@ class ConfigManager:
 
     def update_provider(self, provider: str) -> None:
         self._config.provider = provider
+        self._config.provider_type = ProviderProcessor.get_provider(provider).provider_type
 
     def get_config_dict(self) -> dict:
         return self._config.model_dump()

@@ -44,28 +44,28 @@ def find_available_port(
         port = randint(start, end)
         if is_port_available(port):
             return port
-    raise RuntimeError(f"无法在 {max_attempts} 次尝试内找到可用端口")
+    raise RuntimeError("Could not find an available port after multiple attempts.")
 
 
 def signal_handler(signum, frame):
-    """处理 Ctrl+C 信号"""
-    print("\n正在退出...")
+    """handler for SIGINT and SIGTERM signals to gracefully shut down the server."""
+    print("\nexiting...")
     sys.exit(0)
 
 
 def main() -> None:
-    # 注册信号处理器，支持 Ctrl+C 退出
+    # support graceful shutdown on SIGINT and SIGTERM
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     try:
         port = find_available_port()
-        print(f"服务启动在端口: {port}")
+        print(f"server start: {port}")
         uvicorn.run(app, host="127.0.0.1", port=port)
     except RuntimeError as e:
-        print(f"错误: {e}")
+        print(f"error: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\n正在退出...")
+        print("\nexiting...")
         sys.exit(0)
 
 
