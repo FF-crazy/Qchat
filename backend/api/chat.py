@@ -10,6 +10,11 @@ from backend.service.post import MessagePoster
 chat_router = APIRouter()
 
 
+@chat_router.get("/ping")
+async def ping() -> dict[str, str]:
+    return {"message": "pong"}
+
+
 @chat_router.get("/models")
 async def get_models(
     config_manager: ConfigManager = Depends(get_config_manager)) -> QchatModelList:
@@ -23,7 +28,7 @@ async def get_models(
 
 
 
-@chat_router.post("/messages")
+@chat_router.post("/messages", response_model=None)
 async def post_messages(
     request: QchatRequest,
     config_manager: ConfigManager = Depends(get_config_manager),
