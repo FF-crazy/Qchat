@@ -1,5 +1,5 @@
 [[provider]]
 provider_name = "test"
-type = "openai"
+provider_type = "openai"
 base_url = "https://example.com"
 api_key = "sk-123456"

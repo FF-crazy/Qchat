@@ -424,7 +424,7 @@ class MessagePoster:
 
     @staticmethod
     def _sse_delta(text: str) -> str:
-        return f"data: {json.dumps({delta: text}, ensure_ascii=False)}\\n\\n"
+        return f"data: {json.dumps({'delta': text}, ensure_ascii=False)}\n\n"
 
     async def post_message(self, request: QchatRequest) -> QchatResponse:
         if request.stream:
@@ -461,4 +461,4 @@ class MessagePoster:
             case _:
                 raise ValueError(f"Unsupported request type: {type(provider_request)}")
 
-        yield "data: [DONE]\\n\\n"
+        yield "data: [DONE]\n\n"

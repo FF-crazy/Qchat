@@ -1,7 +1,6 @@
 from pathlib import Path
 from pydantic import ValidationError
 from typing import Any
-from time import time
 import tomllib
 import shutil
 import logging
@@ -90,8 +89,7 @@ class FileProcessor:
 class ProviderProcessor:
     providers: dict[str, Provider] = {}
     current: str | None = None
-    _model_cache: dict[str, tuple[QchatModelList, float]] = {}
-    MODEL_CACHE_TTL: float = 300.0  # 5 minutes
+    _model_cache: dict[str, QchatModelList] = {}
 
     @classmethod
     def set_providers(cls, providers: dict[str, Provider]) -> None:
@@ -128,18 +126,11 @@ class ProviderProcessor:
 
     @classmethod
     def get_cached_model_list(cls, provider_name: str) -> QchatModelList | None:
-        entry = cls._model_cache.get(provider_name)
-        if entry is None:
-            return None
-        model_list, cached_at = entry
-        if time() - cached_at > cls.MODEL_CACHE_TTL:
-            del cls._model_cache[provider_name]
-            return None
-        return model_list
+        return cls._model_cache.get(provider_name)
 
     @classmethod
     def set_cached_model_list(cls, provider_name: str, model_list: QchatModelList) -> None:
-        cls._model_cache[provider_name] = (model_list, time())
+        cls._model_cache[provider_name] = model_list
 
     @classmethod
     def invalidate_model_cache(cls, provider_name: str | None = None) -> None:

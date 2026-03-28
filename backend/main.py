@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from fastapi.security import HTTPBearer
+
 import uvicorn
 from random import randint
 import sys
@@ -9,10 +9,10 @@ from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
 from backend.api.chat import chat_router
+from backend.api.local import local_router
 from backend.models.local import CurrentLocalConfig, Provider
 from backend.service.local import ConfigManager, FileProcessor, ProviderProcessor
 
-security = HTTPBearer(auto_error=False)
 API_VERSION: str = "v1"
 
 @asynccontextmanager
@@ -23,6 +23,7 @@ async def init_api(app: FastAPI) -> AsyncIterator[None]:
     current_provider: str | None = next(iter(providers), None)
     app.state.config_manager = ConfigManager(CurrentLocalConfig(provider=current_provider))
     app.include_router(chat_router)
+    app.include_router(local_router)
     yield
 
 
