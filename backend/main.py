@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-
 import uvicorn
 from random import randint
 import sys
@@ -14,9 +13,19 @@ from backend.models.local import CurrentLocalConfig, Provider
 from backend.service.local import ConfigManager, FileProcessor, ProviderProcessor
 
 API_VERSION: str = "v1"
+PORT_READY_PREFIX: str = "QCHAT_PORT:"
+
 
 @asynccontextmanager
 async def init_api(app: FastAPI) -> AsyncIterator[None]:
+    # Resolve forward references: inject ContextManager into models namespace
+    from backend.service.context import ContextManager
+    import backend.models.local as _models
+    _models.ContextManager = ContextManager
+    _models.Agent.model_rebuild()
+    _models.CurrentLocalConfig.model_rebuild()
+    _models.QchatRequest.model_rebuild()
+
     FileProcessor.init()
     providers: dict[str, Provider] = FileProcessor.load_providers()
     ProviderProcessor.set_providers(providers)
@@ -24,10 +33,13 @@ async def init_api(app: FastAPI) -> AsyncIterator[None]:
     app.state.config_manager = ConfigManager(CurrentLocalConfig(provider=current_provider))
     app.include_router(chat_router)
     app.include_router(local_router)
+    # Print port after server is fully ready so the launcher can connect
+    print(f"{PORT_READY_PREFIX}{app.state.port}", flush=True)
     yield
 
 
 app: FastAPI = FastAPI(title="Qchat backend API", version=API_VERSION, lifespan=init_api)
+
 
 def is_port_available(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -49,21 +61,19 @@ def find_available_port(
 
 
 def signal_handler(signum, frame):
-    """handler for SIGINT and SIGTERM signals to gracefully shut down the server."""
     print("\nexiting...")
     sys.exit(0)
 
 
 def main() -> None:
-    # support graceful shutdown on SIGINT and SIGTERM
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     try:
         port = find_available_port()
-        print(f"server start: {port}")
-        uvicorn.run(app, host="127.0.0.1", port=port)
+        app.state.port = port
+        uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
     except RuntimeError as e:
-        print(f"error: {e}")
+        print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
         print("\nexiting...")

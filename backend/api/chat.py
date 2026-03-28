@@ -39,7 +39,7 @@ async def refresh_models(
 
 
 
-@chat_router.post("/messages")
+@chat_router.post("/messages", response_model=None)
 async def post_messages(
     request: QchatRequest,
     config_manager: ConfigManager = Depends(get_config_manager),
