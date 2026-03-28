@@ -16,10 +16,17 @@ async def get_models(
     config: CurrentLocalConfig = config_manager.get_config()
     if config.provider is None:
         return QchatModelList(model_list=[])
-    poster = MessagePoster(provider=ProviderProcessor.get_provider(config.provider))
+
+    provider_name = config.provider
+    cached = ProviderProcessor.get_cached_model_list(provider_name)
+    if cached is not None:
+        return cached
+
+    poster = MessagePoster(provider=ProviderProcessor.get_provider(provider_name))
     raw_model_list = await poster.get_model_list()
-    #TODO: cache model list in provider processor to avoid repeated API calls
-    return ModelListConverter.to_qchat_model_list(raw_model_list)
+    result = ModelListConverter.to_qchat_model_list(raw_model_list)
+    ProviderProcessor.set_cached_model_list(provider_name, result)
+    return result
 
 
 

@@ -1,27 +1,47 @@
 from pathlib import Path
 from pydantic import ValidationError
 from typing import Any
+from time import time
 import tomllib
+import shutil
 import logging
 
-from backend.models.local import Prompt, Provider, CurrentLocalConfig, Agent
+from backend.models.local import Prompt, Provider, QchatModelList, CurrentLocalConfig, Agent
 
 logger: logging.Logger = logging.getLogger(__name__)
+
+INIT_DIR: Path = Path(__file__).resolve().parent.parent / "init"
 
 
 class FileProcessor:
     """
     FileProcessor processes providers, config and prompt and all file, instead of db.
     """
-    QCHAT_DIR: Path = Path.home() / ".config" / "Qchat"
+    QCHAT_DIR: Path = Path.home() / ".qchat"
     PROVIDER_FILE: Path = QCHAT_DIR / "provider.toml"
+    CONFIG_FILE: Path = QCHAT_DIR / "config.toml"
     PROMPTS_DIR: Path = QCHAT_DIR / "prompts"
 
     @classmethod
     def init(cls):
         cls.QCHAT_DIR.mkdir(parents=True, exist_ok=True)
-        cls.PROVIDER_FILE.touch(exist_ok=True)
         cls.PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        if not cls.CONFIG_FILE.exists():
+            src = INIT_DIR / "config.toml"
+            shutil.copy(src, cls.CONFIG_FILE)
+            logger.info(f"Created default config: {cls.CONFIG_FILE}")
+
+        if not cls.PROVIDER_FILE.exists():
+            src = INIT_DIR / "provider.example.toml"
+            shutil.copy(src, cls.PROVIDER_FILE)
+            logger.info(f"Created example provider config: {cls.PROVIDER_FILE}")
+
+        prompt_files = list(cls.PROMPTS_DIR.glob("*.toml"))
+        if not prompt_files:
+            src = INIT_DIR / "prompt.example.toml"
+            shutil.copy(src, cls.PROMPTS_DIR / "prompt.example.toml")
+            logger.info(f"Created example prompt: {cls.PROMPTS_DIR / 'prompt.example.toml'}")
 
     @classmethod
     def load_providers(cls) -> dict[str, Provider]:
@@ -70,18 +90,21 @@ class FileProcessor:
 class ProviderProcessor:
     providers: dict[str, Provider] = {}
     current: str | None = None
+    _model_cache: dict[str, tuple[QchatModelList, float]] = {}
+    MODEL_CACHE_TTL: float = 300.0  # 5 minutes
 
     @classmethod
     def set_providers(cls, providers: dict[str, Provider]) -> None:
         cls.providers = providers
+        cls._model_cache = {}
         cls.current = next(iter(providers), None)
-    
+
     @classmethod
     def get_current(cls) -> tuple[str, Provider]:
         if not cls.providers or cls.current is None:
             raise KeyError("No providers available. Call set_providers() first.")
         return (cls.current, cls.providers[cls.current])
-    
+
     @classmethod
     def get_provider(cls, name: str) -> Provider:
         provider = cls.providers.get(name)
@@ -90,11 +113,11 @@ class ProviderProcessor:
             raise KeyError(f"Provider not found: {name}")
         cls.current = name
         return provider
-    
+
     @classmethod
     def get_all_providers(cls) -> dict[str, Provider]:
         return cls.providers
-    
+
     @classmethod
     def set_current_provider(cls, name: str) -> Provider:
         if name not in cls.providers:
@@ -102,6 +125,28 @@ class ProviderProcessor:
             raise KeyError(f"Provider not found: {name}")
         cls.current = name
         return cls.providers[name]
+
+    @classmethod
+    def get_cached_model_list(cls, provider_name: str) -> QchatModelList | None:
+        entry = cls._model_cache.get(provider_name)
+        if entry is None:
+            return None
+        model_list, cached_at = entry
+        if time() - cached_at > cls.MODEL_CACHE_TTL:
+            del cls._model_cache[provider_name]
+            return None
+        return model_list
+
+    @classmethod
+    def set_cached_model_list(cls, provider_name: str, model_list: QchatModelList) -> None:
+        cls._model_cache[provider_name] = (model_list, time())
+
+    @classmethod
+    def invalidate_model_cache(cls, provider_name: str | None = None) -> None:
+        if provider_name is None:
+            cls._model_cache.clear()
+        else:
+            cls._model_cache.pop(provider_name, None)
 
 
 class ConfigManager:

@@ -1,0 +1,4 @@
+[default]
+stream = false
+max_tokens = 65536
+temperature = 1.0
